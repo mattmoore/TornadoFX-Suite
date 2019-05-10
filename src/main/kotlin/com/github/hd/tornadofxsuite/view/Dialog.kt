@@ -28,20 +28,18 @@ class Dialog : Fragment() {
                     vboxConstraints { marginRight = 5.0 }
 
                     listview<String> {
-                        if (fxTestGenerator.scanner.mapClassViewNodes.size > 0) {
-                            fxTestGenerator.scanner.mapClassViewNodes.forEach { (className, digraph) ->
-                                items.add(className)
-                                digraph.viewNodes.forEach { (bucket, children) ->
-                                    val nodeLevel = bucket.level
-                                    var viewNode = "$nodeLevel \t${bucket.uiNode}"
+                        fxTestGenerator.scanner.mapClassViewNodes.forEach { (className, digraph) ->
+                            items.add(className)
+                            digraph.viewNodes.forEach { (bucket, children) ->
+                                val nodeLevel = bucket.level
+                                var viewNode = "$nodeLevel \t${bucket.uiNode}"
 
-                                    children.forEachIndexed { index, node ->
-                                        viewNode += if (index < children.size) {
-                                            " -> ${node.uiNode} "
-                                        } else "${node.uiNode}\n"
-                                    }
-                                    items.add(viewNode)
+                                children.forEachIndexed { index, node ->
+                                    viewNode += if (index < children.size) {
+                                        " -> ${node.uiNode} "
+                                    } else "${node.uiNode}\n"
                                 }
+                                items.add(viewNode)
                             }
                         }
                     }
