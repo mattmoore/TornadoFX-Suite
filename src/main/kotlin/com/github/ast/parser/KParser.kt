@@ -48,7 +48,7 @@ interface KParser {
     var viewImports: MapKClassTo<String>
 
     /**
-     * Allows for intensive recursive parsing of Psi Node tree parsing
+     * Allows for intensive recursive parsing of Psi Node tree parsing.
      *
      * @return [Gson] object
      */
@@ -57,7 +57,7 @@ interface KParser {
     /**
      * Pass in Kotlin code in the form of a [String] and use the Kastree PSI Parser
      * to start breaking declarations of a file down into their respective classes
-     * or independent functions
+     * or independent functions.
      *
      * @param textFile: [String] -> string value of Kotlin code read from file
      */
@@ -78,25 +78,16 @@ interface KParser {
 
     /**
      * Convert method with [Gson] and start breaking down class methods
-     * to record into a [Method] object
+     * to record into a [Method] object.
      *
-     *  TODO start collecting the content of methods from current AST breakdown to map nodes-to-functions
+     *  TODO Part 1 - Start collecting the content of methods from current AST breakdown.
+     *  TODO Part 2 - Map nodes-to-function as method analysis detects node property changes.
      *
      * @param method: [Node.Decl.Func] -> kastree.ast.Node.Decl.Func
      * @param classMethods: [ArrayList] -> ArrayList of [Methods] passed down
      *                                     to preserve methods per class
      */
     fun breakdownClassMethod(method: Node.Decl.Func, classMethods: ArrayList<Method>)
-
-    /**
-     * Breakdown the contents of a method located in a block, or { }
-     *
-     * @param stmts: [JsonArray] -> an Array of method statements found in a block, or { },
-     *                              associated with the method function
-     * @param methodStatements: [ArrayList] -> ArrayList of [Methods] passed down
-     *                                     to preserve methods per class
-     */
-    fun breakdownStmts(stmts: JsonArray, methodStatements: ArrayList<String>?)
 
     /**
      * Determine whether a method is a block:
@@ -116,6 +107,16 @@ interface KParser {
      *                                     to preserve methods per class
      */
     fun breakdownBody(body: JsonObject, methodStatements: ArrayList<String>)
+
+    /**
+     * Breakdown the contents of a method located in a block, or { }.
+     *
+     * @param stmts: [JsonArray] -> an Array of method statements found in a block, or { },
+     *                              associated with the method function
+     * @param methodStatements: [ArrayList] -> ArrayList of [Method] passed down
+     *                                     to preserve methods per class
+     */
+    fun breakdownStmts(stmts: JsonArray, methodStatements: ArrayList<String>? = ArrayList())
 
     /**
      * Determine whether a node declaration is an expression:
@@ -154,7 +155,8 @@ interface KParser {
      * @param expr: [JsonObject] -> node expression object
      * @param buildStmt: [String] -> Buildup of statement string to record
      *                               for method contents
-     * @param methodStatements: []
+     * @param methodStatements: [ArrayList] -> simply passed down if it's
+     *                               coming from the method breakdown
      *
      * @return [String], continued statement building for method content
      */
@@ -164,34 +166,150 @@ interface KParser {
             methodStatements: ArrayList<String>? = arrayListOf()
     ): String
 
+    /**
+     * TODO FIND THE DIFFERENCE BETWEEN PARAMS, ARGUMENTS, AND PARAMS
+     * Breaks down parameter values passed within a method call
+     *
+     * @param params: [JsonArray] -> node parameters
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     *
+     * @return [String], continued statement building for method content
+     */
     fun getParams(params: JsonArray, buildStmt: String): String
 
+    /**
+     * TODO FIND THE DIFFERENCE BETWEEN PARAMS, ARGUMENTS, AND PARAMS
+     * Breaks down elements within a collection
+     *
+     * @param elems: [JsonArray] -> node elements
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     *
+     * @return [String], continued statement building for method content
+     */
     fun getElems(elems: JsonArray, buildStmt: String): String
 
+    /**
+     * TODO FIND THE DIFFERENCE BETWEEN PARAMS, ARGUMENTS, AND PARAMS
+     * Breaks down parameter values passed within a method call
+     *
+     * @param arguments: [JsonArray] -> node arguments
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     *
+     * @return [String], continued statement building for method content
+     */
     fun getArguments(arguments: JsonArray, buildStmt: String): String
 
+    /**
+     * @param value: [JsonObject] -> node arguments
+     *
+     * @return [String], continued statement building for method content
+     */
     fun getPrimitiveValue(value: JsonObject): String
 
-    fun getPrimitiveType(value: JsonObject): String
+    /**
+     * TODO consolidate both getPrimitiveTypes
+     * @param form: [JsonObject] -> node form
+     *
+     * @return [String], continued statement building for method content
+     */
+    fun getPrimitiveType(form: JsonObject): String
 
+    /**
+     * TODO consolidate both getPrimitiveTypes
+     * @param form: [String] -> node form value
+     *
+     * @return [String], continued statement building for method content
+     */
     fun getPrimitiveType(form: String): String
 
+    /**
+     * Accounts for operations such as
+     *      | . | = | != | - | == | .. | as |
+     *
+     * @param token: [String] -> node form value
+     *
+     * @return [String], continued statement building for method content
+     */
     fun getToken(token: String): String
 
+    /**
+     * Breakdowns all ${left-hand}.${right-hand] operations as needed.
+     *
+     * @param expr: [String] -> used to grab lhs(), the operation, and rhs()
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     *
+     * @return [String], continued statement building for method content
+     */
     fun breakdownBinaryOperation(expr: JsonObject, buildStmt: String): String
 
+    /***
+     * Properties -
+     *     Properties tend to have 2 types I care about:
+     *     1) kastree.ast.Node.Expr.Call -> is a member property of a certain class
+     *     2) kastree.ast.Node.Expr.Name -> an independent member property
+     *
+     * Note: This is the older version of getting properties. Down the road
+     *       this ought to be refactored to use the above recursive functions.
+     *
+     * Note: Execute vararg functions here to locate views and other view-specific
+     *      components per configurations.
+     *
+     * @param property: [Node.Decl.Property] - kastree.ast.Node.Decl.Property
+     * @param propList: [ArrayList] - contains class member properties
+     *                                to be saved to class info
+     */
     fun convertToClassProperty(
             property: Node.Decl.Property,
             propList: ArrayList<Property>,
             className: String
     )
 
-    fun saveViewImport(path: String): String
+    /***
+     * Depending on whether the path resides in a java file or a kotlin file
+     * within the source code, the path is rendered into an address for
+     * importing a particular class for test generation.
+     *
+     * @return [String] file dependency address for import
+     */
+    fun saveViewImport(): String
 
+    /***
+     * // TODO check if this is TornadoFX specific
+     * Usually observables come from lists denoted as observable() as an RxJava.
+     * operation
+     *
+     * @param node: [JsonObject] - property based on binary operation
+     * @param isolatedName: [String] - name assigned to property
+     *
+     * @return [Property] observable
+     */
     fun getObservableProperty(node: JsonObject, isolatedName: String): Property
 
+    /***
+     * // TODO lol this is f**ked up
+     * Grabs the type or the collection type of a class member property.
+     *
+     * @param node: [JsonObject] - node property
+     * @param isolated: [JsonObject] - for potential dependency injection
+     * @param isolatedName: [String] - name assigned to property
+     *
+     * @return [Property] a class member property or class member collection
+     */
     fun getProperty(node: JsonObject, isolated: JsonObject, isolatedName: String): Property
 
+    /***
+     * Kastree readOnly values indicates whether a value is mutable or immutable.
+     *
+     * @param node: [JsonObject] - node property
+     * @param isolated: [JsonObject] - for potential dependency injection
+     * @param isolatedName: [String] - name assigned to property
+     *
+     * @return [String] 'val' or 'var'
+     */
     fun valOrVar(node: JsonObject): String
 
 }

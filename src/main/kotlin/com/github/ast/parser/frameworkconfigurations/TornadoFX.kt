@@ -61,7 +61,6 @@ fun saveComponentBreakdown(
 fun detectScopes(
         isolatedName: String,
         className: String,
-        path: String,
         node: JsonObject,
         parser: KParserImpl
 ) {
@@ -81,12 +80,11 @@ fun detectScopes(
 fun detectRoot(
         isolatedName: String,
         className: String,
-        path: String,
         node: JsonObject,
         parserImpl: KParserImpl
 ) {
     if (isolatedName == "root") {
-        parserImpl.viewImports[className] = parserImpl.saveViewImport(path)
+        parserImpl.viewImports[className] = parserImpl.saveViewImport()
         println("DETECTION ORDER")
         detectLambdaControls(parserImpl, node, className, LinkedList())
         println("END OF DETECTION ORDER")

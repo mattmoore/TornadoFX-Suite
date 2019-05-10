@@ -10,9 +10,9 @@ import java.util.*
 import kotlin.collections.HashMap
 
 open class KParserImpl(
-        val path: String,
+        private val path: String,
         val componentBreakdownFunction: ComponentBreakdownFunction,
-        // TODO used sealed classes to make view types here interchangable
+        // TODO used sealed classes to make view types here interchangeable
         var views: MapKClassTo<TornadoFXView> = HashMap(),
         private vararg val functions: DetectFrameworkComponents
 ): KParser {
@@ -102,6 +102,13 @@ open class KParserImpl(
         )
     }
 
+    override fun breakdownBody(body: JsonObject, methodStatements: ArrayList<String>) {
+        when {
+            body.has("block") -> breakdownStmts(body.block().stmts(), methodStatements)
+            body.has("expr") -> methodStatements.add(breakdownExpr(body.expr(), ""))
+            else -> methodStatements.add(breakdownBinaryOperation((body.expr()), ""))
+        }
+    }
 
     override fun breakdownStmts(stmts: JsonArray, methodStatements: ArrayList<String>?) {
         stmts.forEach { statement ->
@@ -111,17 +118,6 @@ open class KParserImpl(
                 stmt.has("decl") -> methodStatements?.add(breakdownDecl(stmt.decl(), ""))
                 else ->  println("stmt has$stmt")
             }
-        }
-    }
-
-    override fun breakdownBody(body: JsonObject, methodStatements: ArrayList<String>) {
-        when {
-            // regular block function
-            body.has("block") -> breakdownStmts(body.block().stmts(), methodStatements)
-            // function with reflective method calls
-            body.has("expr") -> methodStatements.add(breakdownExpr(body.expr(), ""))
-            // function has a single assignment statement
-            else -> methodStatements.add(breakdownBinaryOperation((body.expr()), ""))
         }
     }
 
@@ -194,7 +190,7 @@ open class KParserImpl(
 
     override fun getParams(params: JsonArray, buildStmt: String): String {
         var buildParams = buildStmt
-        params.forEach{ parameter ->
+        params.forEach { parameter ->
             buildParams += parameter.asJsonObject.vars().getObject(0).name()
         }
         return buildParams
@@ -250,8 +246,8 @@ open class KParserImpl(
     }
 
     // TODO rewrite to accept 2 types for primitive
-    override fun getPrimitiveType(value: JsonObject): String {
-        return when (value.get("form").asJsonPrimitive.toString()) {
+    override fun getPrimitiveType(form: JsonObject): String {
+        return when (form.get("form").asJsonPrimitive.toString()) {
             "\"BOOLEAN\"" -> "Boolean"
             "\"BYTE\"" -> "Byte"
             "\"CHAR\"" -> "Char"
@@ -300,18 +296,6 @@ open class KParserImpl(
         return "$buildStmt${breakdownExpr(expr.lhs(), buildStmt)}$operator${breakdownExpr(expr.rhs(), buildStmt)}"
     }
 
-    /***
-     * Properties -
-     *     Properties tend to have 2 types I care about:
-     *     1) kastree.ast.Node.Expr.Call -> is a member property of a certain class
-     *     2) kastree.ast.Node.Expr.Name -> an independent member property
-     *
-     * Note: This is the older version of getting properties. Down the road this ought to
-     *       be refactored to use the above recursive functions
-     *
-     * Note: Execute vararg functions here to locate views and other view-specific components
-     *        per configurations
-     */
     override fun convertToClassProperty(
             property: Node.Decl.Property,
             propList: ArrayList<Property>,
@@ -339,7 +323,7 @@ open class KParserImpl(
         }
     }
 
-    override fun saveViewImport(path: String): String {
+    override fun saveViewImport(): String {
         return if (path.contains("kotlin/")) {
             path.split("kotlin")[1].replace("/", ".").substring(1)
         } else {
@@ -390,7 +374,7 @@ open class KParserImpl(
     }
 
     /**
-     * This is fucked up
+     * Lol this is f**ked up
      */
     override fun getProperty(node: JsonObject, isolated: JsonObject, isolatedName: String): Property {
 
@@ -436,9 +420,6 @@ open class KParserImpl(
         return Property(valOrVar(node), isolatedName, isolatedType)
     }
 
-    /**
-     * Kastree readOnly values indicates whether a value is a 'val' or 'var'
-     */
     override fun valOrVar(node: JsonObject): String = if (node.readOnly()) "val " else "var "
 
     /**
