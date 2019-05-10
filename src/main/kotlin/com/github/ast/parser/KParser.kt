@@ -1,471 +1,197 @@
 package com.github.ast.parser
 
-import com.google.gson.*
+import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 import kastree.ast.Node
-import kastree.ast.psi.Parser
-import java.util.*
-import kotlin.collections.HashMap
+import java.util.ArrayList
 
-class KParser(
-        val componentBreakdownFunction: (String, String, KParser) -> Unit,
-        // TODO used sealed classes to make view types here interchangable
-        var views: HashMap<String, TornadoFXView> = HashMap(),
-        private vararg val functions: (String, String, String, JsonObject, KParser) -> Unit
-) {
+/**
+ * Uses the Kastree PSI Parser to break down relevant Kotlin files in a project
+ * into a hierarchy of nodes and reverse-parse recursively into the desired data
+ * structures for testing.
+ */
+interface KParser {
 
     /**
-     * breakdown of classes/files that may have independent functions
+     * @return breakdown of classes used for generative testing
      */
-    var classes = ArrayList<ClassBreakDown>()
-    var independentFunctions = ArrayList<String>()
+    var classes: ArrayList<ClassBreakDown>
 
     /**
-     * detectedUIControls key: by the class name
+     * @return breakdown of independent functions located in files. Not used yet.
      */
-    var detectedUIControls = HashMap<String, ArrayList<UINode>>()
+    var independentFunctions: ArrayList<String>
 
     /**
-     * mapClassViewNodes key: by the class name
-     */
-    var mapClassViewNodes = HashMap<String, Digraph>()
-
-    /**
-     * viewImports are saved for the test generator
-     */
-    var viewImports = HashMap<String, String>()
-
-    /**
-     * For recursive parsing
-     */
-    val gson = Gson()
-
-    fun parseAST(textFile: String, path: String) {
-        val file = Parser.parseFile(textFile, true)
-
-        file.decls.forEach { node ->
-            when (node) {
-                is Node.Decl.Structured -> breakDownClass(node.name, file, path)
-                is Node.Decl.Func -> node.name ?: independentFunctions.add(node.name.toString())
-            }
-        }
-    }
-
-    private fun breakDownClass(className: String, file: Node.File, path: String) {
-        val classProperties = ArrayList<Property>()
-        val classMethods = ArrayList<Method>()
-        val classParents = ArrayList<String>()
-
-        gson.toJsonTree(file).asJsonObject
-
-        val clazz = file.decls[0] as Node.Decl.Structured
-
-        // collecting this info for test information
-        clazz.parents.forEach {
-            val superClass = gson.toJsonTree(it).asJsonObject.type().getType()
-            classParents.add(superClass)
-            componentBreakdownFunction(superClass, className, this)
-        }
-
-        // Save for all files
-        clazz.members.forEach {
-            when (it) {
-                is Node.Decl.Structured -> println("this is probably a companion object")
-                is Node.Decl.Property -> convertToClassProperty(it, classProperties, className, path)
-                is Node.Decl.Func -> breakdownClassMethod(it, classMethods)
-            }
-        }
-
-        classes.add(ClassBreakDown(className, classParents, classProperties, classMethods))
-    }
-
-    private fun breakdownClassMethod(method: Node.Decl.Func, classMethods: ArrayList<Method>) {
-        val methodJson = gson.toJsonTree(method).asJsonObject
-        val methodStatements = ArrayList<String>()
-        val methodContent = methodJson.body()
-
-        breakdownBody(methodJson.body(), methodStatements)
-
-        val parameters = ArrayList<Property>()
-        methodJson.params().forEach { parameter ->
-            val param = parameter.asJsonObject
-            val paramRef = param.type().ref()
-            val paramType = when {
-                paramRef.has("pieces") -> paramRef.getType()
-                paramRef.has("type") -> paramRef.type().getType()
-                else -> TODO()
-            }
-            parameters.add(Property("val", param.name(), paramType))
-        }
-
-        var returnType = "Unit"
-        if (methodJson.has("type")) {
-            returnType = methodJson.type().ref().getType()
-        }
-
-        // TODO write a mechanism to detect nodes per function after AST parse job is complete
-        classMethods.add(
-                Method(
-                        name = methodJson.name(),
-                        parameters = parameters,
-                        returnType = returnType,
-                        methodStatements = methodStatements,
-                        viewNodesAffected = ArrayList()
-                )
-        )
-    }
-
-
-    private fun breakdownStmts(stmts: JsonArray, methodStatements: ArrayList<String>?) {
-        stmts.forEach { statement ->
-            val stmt = statement.asJsonObject
-            when {
-                stmt.has("expr") -> methodStatements?.add(breakdownExpr(stmt.expr(), ""))
-                stmt.has("decl") -> methodStatements?.add(breakdownDecl(stmt.decl(), ""))
-                else ->  println("stmt has$stmt")
-            }
-        }
-    }
-
-    private fun breakdownBody(body: JsonObject, methodStatements: ArrayList<String>) {
-        when {
-            // regular block function
-            body.has("block") -> breakdownStmts(body.block().stmts(), methodStatements)
-            // function with reflective method calls
-            body.has("expr") -> methodStatements.add(breakdownExpr(body.expr(), ""))
-            // function has a single assignment statement
-            else -> methodStatements.add(breakdownBinaryOperation((body.expr()), ""))
-        }
-    }
-
-    private fun breakdownDecl(decl: JsonObject, buildStmt: String): String {
-        return when {
-            decl.has("expr") -> breakdownDeclProperty(decl, buildStmt)
-            decl.has("body") -> {
-                breakdownBody(decl.body(), arrayListOf())
-                "method body here: $decl"
-            }
-            else -> "MISSING DECL $decl"
-        }
-    }
-
-    /**
-     * Not fucked up but does not account for all decl property types nor does it format properly
-     */
-    private fun breakdownDeclProperty(decl: JsonObject, buildStmt: String): String {
-        val isolated = decl.vars().getObject(0)
-        val isolatedName = isolated.name()
-        val property = when {
-            decl.expr().has("expr") -> {
-                if (decl.expr().has("expr") && decl.expr().has("oper")) {
-                            Property(valOrVar(decl), isolatedName, decl.vars().getObject(0).type().ref().pieces().getObject(0).name())
-                } else {
-                    getProperty(
-                            decl,
-                            isolated,
-                            isolatedName)
-                }
-            }
-            decl.expr().has("lhs") &&
-                decl.expr().has("oper") &&
-                decl.expr().has("rhs") -> Property(
-                    valOrVar(decl),
-                    isolatedName,
-                    breakdownBinaryOperation(decl.expr(), "")
-            )
-            decl.expr().has("value") -> Property(
-                    valOrVar(decl),
-                    isolatedName,
-                    getPrimitiveType(decl.expr()))
-            else -> TODO()
-        }
-        val declaration = "$buildStmt${property.valOrVar} $isolatedName: ${property.propertyType}"
-        return "$declaration = ${breakdownExpr(decl, buildStmt)}"
-    }
-
-    private fun breakdownExpr(expr: JsonObject,
-                              buildStmt: String,
-                              methodStatements: ArrayList<String>? = arrayListOf()): String {
-        when {
-            expr.has("lhs") &&
-                    expr.has("oper") &&
-                    expr.has("rhs")-> breakdownBinaryOperation(expr, buildStmt)
-            expr.has("args") -> getArguments(expr.args(), buildStmt)
-            expr.has("name") -> buildStmt + expr.name()
-            expr.has("expr") -> breakdownExpr(expr.expr(), buildStmt)
-            expr.has("elems") -> getElems(expr.elems(), buildStmt)
-            expr.has("params") -> getParams(expr.params(), buildStmt)
-            expr.has("value") -> buildStmt + getValue(expr)
-            expr.has("block") -> breakdownStmts(expr.block().stmts(), methodStatements)
-            expr.size() == 0 -> {}
-            else -> println(expr)
-        }
-        return buildStmt
-    }
-
-    private fun getParams(params: JsonArray, buildStmt: String): String {
-        var buildParams = buildStmt
-        params.forEach{ parameter ->
-            buildParams += parameter.asJsonObject.vars().getObject(0).name()
-        }
-        return buildParams
-    }
-
-    private fun getElems(elems: JsonArray, buildStmt: String): String {
-        var buildElems = buildStmt
-        if (elems.size() > 0) {
-            elems.forEach {
-                val elem = it.asJsonObject
-                buildElems += when {
-                    elem.has("str") -> elem.str()
-                    elem.has("expr") -> breakdownExpr(elem, buildElems)
-                    elem.has("value") -> getValue(elem)
-                    elem.has("lhs") &&
-                            elem.has("oper") &&
-                            elem.has("rhs") -> breakdownBinaryOperation(elem, buildElems)
-                    elem.has("name") -> elem.name()
-                    elem.has("recv") -> elem.recv().type().getType()
-                    else -> println("Looks like this element type is: $elem")
-                }
-            }
-        }
-        return buildElems
-    }
-
-    private fun getArguments(arguments: JsonArray, buildStmt: String): String {
-        var buildArgs = "$buildStmt("
-        if (arguments.size() > 0) {
-            arguments.forEachIndexed { index, argument ->
-                val argExpression = argument.asJsonObject.expr()
-                if (argExpression.has("elems")) {
-                    buildArgs += getElems(argExpression.elems(), buildArgs)
-                }
-                buildArgs += if (index < arguments.size()) ", " else ")"
-            }
-        } else buildArgs += ")"
-        return buildArgs
-    }
-
-    private fun getValue(value: JsonObject): String {
-        val gValue = value.get("value")
-        return when (value.get("form").asJsonPrimitive.toString()) {
-            "\"BOOLEAN\"" ->  gValue.asBoolean.toString()
-            "\"BYTE\"" -> gValue.asByte.toString()
-            "\"CHAR\"" -> gValue.asCharacter.toString()
-            "\"DOUBLE\"" -> gValue.asDouble.toString()
-            "\"FLOAT\"" -> gValue.asFloat.toString()
-            "\"INT\"" -> gValue.asInt.toString()
-            "\"NULL\"" -> "null"
-            else -> "Unrecognized value type"
-        }
-    }
-
-    // TODO rewrite to accept 2 types for primitive
-    private fun getPrimitiveType(value: JsonObject): String {
-        return when (value.get("form").asJsonPrimitive.toString()) {
-            "\"BOOLEAN\"" -> "Boolean"
-            "\"BYTE\"" -> "Byte"
-            "\"CHAR\"" -> "Char"
-            "\"DOUBLE\"" -> "Double"
-            "\"FLOAT\"" -> "Float"
-            "\"INT\"" -> "Int"
-            "\"NULL\"" -> "null"
-            else -> "Unrecognized value type" // object type probs
-        }
-    }
-
-    private fun getPrimitiveType(form: String): String {
-        return when (form) {
-            "\"BOOLEAN\"" -> "Boolean"
-            "\"BYTE\"" -> "Byte"
-            "\"CHAR\"" -> "Char"
-            "\"DOUBLE\"" -> "Double"
-            "\"FLOAT\"" -> "Float"
-            "\"INT\"" -> "Int"
-            "\"NULL\"" -> "null"
-            else -> "Unrecognized value type" // object type probs
-        }
-    }
-
-    private fun getToken(token: String): String {
-        return when (token) {
-            "DOT" -> "."
-            "ASSN" -> " = "
-            "NEQ" -> " != "
-            "NEG" -> "-"
-            "EQ" -> " == "
-            "RANGE" -> " .. "
-            "AS" -> " as "
-            else -> token
-        }
-    }
-
-    private fun breakdownBinaryOperation(expr: JsonObject, buildStmt: String): String {
-        val oper = expr.oper()
-        val operator = when {
-            oper.has("str")  -> oper.str()
-            oper.has("token") -> getToken(oper.token())
-            else -> "{$oper}"
-        }
-
-        return "$buildStmt${breakdownExpr(expr.lhs(), buildStmt)}$operator${breakdownExpr(expr.rhs(), buildStmt)}"
-    }
-
-    /***
-     * Properties -
-     *     Properties tend to have 2 types I care about:
-     *     1) kastree.ast.Node.Expr.Call -> is a member property of a certain class
-     *     2) kastree.ast.Node.Expr.Name -> an independent member property
+     * key: class name
+     * value: all UI Nodes in a particular class
      *
-     * Note: This is the older version of getting properties. Down the road this ought to
-     *       be refactored to use the above recursive functions
+     * @return all [UINode] detected per class
+     */
+    var detectedUIControls: MapKClassTo<ArrayList<UINode>>
+
+    /**
+     * key: class name
+     * value: a representation of the view hierarchy via a [Digraph]
      *
-     * Note: Execute vararg functions here to locate views and other view-specific components
-     *        per configurations
+     * @return all available view hierarchies represented by directed graphs found in view classes
      */
-    private fun convertToClassProperty(property: Node.Decl.Property,
-                                       propList: ArrayList<Property>,
-                                       className: String,
-                                       path: String) {
-        val secondBit = "expr=Call(expr=Name(name="
-        val string = property.toString()
+    var mapClassViewNodes: MapKClassTo<Digraph>
 
-        val node = gson.toJsonTree(property).asJsonObject
+    /**
+     * key: class name
+     * value: saved package name needed for a particular dependency import in test generation
+     *
+     * @return all possible project-specific dependencies needed in generated test file
+     */
+    var viewImports: MapKClassTo<String>
 
-        if (string.contains(secondBit)) {
-            val isolated = node.vars().getObject(0)
-            val isolatedName = isolated.name()
+    /**
+     * Allows for intensive recursive parsing of Psi Node tree parsing
+     *
+     * @return [Gson] object
+     */
+    val gson: Gson
 
-            functions.forEach {
-                it(isolatedName, className, path, node, this)
-            }
-
-            val classProperty = when {
-                node.expr().has("lhs") -> getObservableProperty(node, isolatedName)
-                else -> getProperty(node, isolated, isolatedName)
-            }
-
-            propList.add(classProperty)
-        }
-    }
-
-    fun saveViewImport(path: String): String {
-        return if (path.contains("kotlin/")) {
-            path.split("kotlin")[1].replace("/", ".").substring(1)
-        } else {
-            path.split("java")[1].replace("/", ".").substring(1)
-        }
-    }
+    /**
+     * Pass in Kotlin code in the form of a [String] and use the Kastree PSI Parser
+     * to start breaking declarations of a file down into their respective classes
+     * or independent functions
+     *
+     * @param textFile: [String] -> string value of Kotlin code read from file
+     */
+    fun parseAST(textFile: String)
 
 
     /**
-     * Observable class properties ought to be refactored to use the recursive breakdown
-     * above for Binary Operations
+     * Begin breaking down AST parsing for a Kotlin class by:
+     *  - super classes
+     *  - class properties
+     *  - class methods
+     *  - structs: companion objects, etc TODO get to this eventually
+     *
+     * @param className: [String] -> Node.Decl.name of class
+     * @param file: [Node.File] -> kastree.ast.Node.File
      */
-    private fun getObservableProperty(node: JsonObject, isolatedName: String): Property {
-        val type = node.expr().lhs().expr().name()
-
-        // build objects for primitive lists
-        val isolatedType = when (type) {
-            "listOf" -> {
-                // get list
-                val elements = node.expr().lhs().args()
-                var list = ""
-
-                elements.forEach { element ->
-                    val elemNodeExpr = element.asJsonObject.expr()
-                    val elemType = elemNodeExpr.expr().name()
-                    list += "$elemType("
-                    val objectItems = elemNodeExpr.args()
-                    objectItems.forEachIndexed { index, property ->
-                        val elem = property.asJsonObject.expr().elems().getObject(0)
-                        when {
-                            elem.has("str") -> list += "${elem.get("str")}"
-                            elem.has("expr") -> list += breakdownExpr(elem, list)
-                            else -> println("Looks like this element type is: $elem")
-                        }
-                        list += if (index != objectItems.size() - 1) ", " else ").observable"
-                    }
-                }
-                list
-            }
-            else -> {
-                println("OBSERVABLE TYPE $type")
-                type
-            }
-        }
-        val valOrVar = if (node.readOnly()) "val " else "var "
-
-        return Property(valOrVar, isolatedName, isolatedType)
-    }
+    fun breakDownClass(className: String, file: Node.File)
 
     /**
-     * This is fucked up
+     * Convert method with [Gson] and start breaking down class methods
+     * to record into a [Method] object
+     *
+     *  TODO start collecting the content of methods from current AST breakdown to map nodes-to-functions
+     *
+     * @param method: [Node.Decl.Func] -> kastree.ast.Node.Decl.Func
+     * @param classMethods: [ArrayList] -> ArrayList of [Methods] passed down
+     *                                     to preserve methods per class
      */
-    private fun getProperty(node: JsonObject, isolated: JsonObject, isolatedName: String): Property {
-
-        val type = node.expr().expr().name()
-        var isolatedType = ""
-        when {
-            // primitive property
-            node.expr().expr().has("form") -> {
-                isolatedType = getPrimitiveType(node.expr().expr().form())
-            }
-            // collection property
-            node.expr().expr().has("name") -> {
-                isolatedType = when(type) {
-                    "inject" -> isolated.type().ref().getType()
-                    "listOf" -> {
-                        val listOfMemberType = node.expr().typeArgs()
-
-                        if (listOfMemberType.size() > 0) {
-                            "$type( " + listOfMemberType.getObject(0).ref().getType() + ")"
-                        } else {
-                            type
-                        }
-                    }
-                    "HashMap" -> "$type<" +
-                            node.expr().typeArgs().getObject(0).ref().getType() + ","+
-                            node.expr().typeArgs().getObject(1).ref().getType() + ">"
-                    "ArrayList" -> "$type<" +
-                            node.expr().typeArgs().getObject(0).ref().getType() + ">"
-                    "mutableListOf" -> {
-                        val listOfMemberType = node.expr().typeArgs()
-
-                        if (listOfMemberType.size() > 0) {
-                            "$type( " + listOfMemberType.getObject(0).ref().getType() + ")"
-                        } else {
-                            type
-                        }
-                    }
-                    else -> type
-                }
-            }
-        }
-
-        return Property(valOrVar(node), isolatedName, isolatedType)
-    }
+    fun breakdownClassMethod(method: Node.Decl.Func, classMethods: ArrayList<Method>)
 
     /**
-     * Kastree readOnly values indicates whether a value is a 'val' or 'var'
+     * Breakdown the contents of a method located in a block, or { }
+     *
+     * @param stmts: [JsonArray] -> an Array of method statements found in a block, or { },
+     *                              associated with the method function
+     * @param methodStatements: [ArrayList] -> ArrayList of [Methods] passed down
+     *                                     to preserve methods per class
      */
-    private fun valOrVar(node: JsonObject): String = if (node.readOnly()) "val " else "var "
+    fun breakdownStmts(stmts: JsonArray, methodStatements: ArrayList<String>?)
 
     /**
-     * Using enum classes to check for control values here
+     * Determine whether a method is a block:
+     *
+     *     fun blockMethod() { ... }
+     *
+     * is an expression for reflective calls:
+     *
+     *     ::reflectiveMethod    TODO double check this one
+     *
+     * or is a single assignment statement:
+     *
+     *     fun expressionMethod(): String = "Hello world!"
+     *
+     * @param body: [JsonObject] -> containing the contents of the method
+     * @param methodStatements: [ArrayList] -> ArrayList of [String] passed down
+     *                                     to preserve methods per class
      */
-    inline fun <reified T : Enum<T>> addControls(
-            control: UINode,
+    fun breakdownBody(body: JsonObject, methodStatements: ArrayList<String>)
+
+    /**
+     * Determine whether a node declaration is an expression:
+     *     TODO record example here
+     * or is a body:
+     *     TODO record example here
+     *
+     * @param decl: [JsonObject] -> node declaration object
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     *
+     * @return [String], continued statement building for method content
+     */
+    fun breakdownDecl(decl: JsonObject, buildStmt: String): String
+
+    /**
+     * TODO does not account for all decl property types nor is it recorded correctly
+     * Detects different kinds of property declarations in a method and their assignment value
+     * Expressions:
+     *     TODO record examples here
+     * Binary Operations:
+     *     catScheduleScope.model.item = catSchedule
+     * Value
+     *
+     * @param decl: [JsonObject] -> node declaration object
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     *
+     * @return [String], continued statement building for method content
+     */
+    fun breakdownDeclProperty(decl: JsonObject, buildStmt: String): String
+
+    /**
+     * Detects different and breaks down expressions, see implementation
+     *
+     * @param expr: [JsonObject] -> node expression object
+     * @param buildStmt: [String] -> Buildup of statement string to record
+     *                               for method contents
+     * @param methodStatements: []
+     *
+     * @return [String], continued statement building for method content
+     */
+    fun breakdownExpr(
+            expr: JsonObject,
+            buildStmt: String,
+            methodStatements: ArrayList<String>? = arrayListOf()
+    ): String
+
+    fun getParams(params: JsonArray, buildStmt: String): String
+
+    fun getElems(elems: JsonArray, buildStmt: String): String
+
+    fun getArguments(arguments: JsonArray, buildStmt: String): String
+
+    fun getPrimitiveValue(value: JsonObject): String
+
+    fun getPrimitiveType(value: JsonObject): String
+
+    fun getPrimitiveType(form: String): String
+
+    fun getToken(token: String): String
+
+    fun breakdownBinaryOperation(expr: JsonObject, buildStmt: String): String
+
+    fun convertToClassProperty(
+            property: Node.Decl.Property,
+            propList: ArrayList<Property>,
             className: String
-    ) {
-        enumValues<T>().forEach {
-            if (control.uiNode.toLowerCase() == (it.name).toLowerCase()) {
-                if (!detectedUIControls.containsKey(className)) {
-                    val controlCollection = ArrayList<UINode>()
-                    detectedUIControls[className] = controlCollection
-                }
-                detectedUIControls[className]?.add(control)
-            }
-        }
-    }
+    )
+
+    fun saveViewImport(path: String): String
+
+    fun getObservableProperty(node: JsonObject, isolatedName: String): Property
+
+    fun getProperty(node: JsonObject, isolated: JsonObject, isolatedName: String): Property
+
+    fun valOrVar(node: JsonObject): String
 
 }
