@@ -10,7 +10,7 @@ import kotlin.random.Random
 
 class FXTestBuilders : Controller() {
 
-    // TODO - may need to refactor with the enums definitions in TornadoFX.kt, enums are redundant
+    // TODO - may need to refactor with the enums definitions in TornadoFX, enums are redundant
     private val controlDictionary = hashMapOf(
             "form" to "Form",
             "textfield" to "TextField",

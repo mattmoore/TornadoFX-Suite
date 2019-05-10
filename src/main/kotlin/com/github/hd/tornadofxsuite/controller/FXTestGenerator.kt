@@ -2,6 +2,8 @@ package com.github.hd.tornadofxsuite.controller
 
 import com.github.ast.parser.*
 import com.github.ast.parser.frameworkconfigurations.TornadoFXView
+import com.github.ast.parser.frameworkconfigurations.detectRoot
+import com.github.ast.parser.frameworkconfigurations.detectScopes
 import com.github.ast.parser.frameworkconfigurations.saveComponentBreakdown
 import tornadofx.*
 import java.io.BufferedReader

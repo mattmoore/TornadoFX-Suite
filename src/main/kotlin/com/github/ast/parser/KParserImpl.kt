@@ -311,7 +311,7 @@ open class KParserImpl(
             val isolatedName = isolated.name()
 
             functions.forEach {
-                it(isolatedName, className, path, node, this)
+                it(isolatedName, className, node, this)
             }
 
             val classProperty = when {
