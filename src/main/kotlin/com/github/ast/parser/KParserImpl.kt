@@ -3,6 +3,7 @@ package com.github.ast.parser
 import com.github.ast.parser.frameworkconfigurations.ComponentBreakdownFunction
 import com.github.ast.parser.frameworkconfigurations.DetectFrameworkComponents
 import com.github.ast.parser.frameworkconfigurations.TornadoFXView
+import com.github.ast.parser.nodebreakdown.*
 import com.google.gson.*
 import kastree.ast.Node
 import kastree.ast.psi.Parser
@@ -51,7 +52,7 @@ open class KParserImpl(
         structuredNode.parents.forEach {
             val superClass = gson.toJsonTree(it).asJsonObject.type().getType()
             classParents.add(superClass)
-            componentBreakdownFunction(superClass, className, this)
+            componentBreakdownFunction(superClass, className)
         }
 
         // Save for all files
@@ -141,7 +142,7 @@ open class KParserImpl(
         val property = when {
             decl.expr().has("expr") -> {
                 if (decl.expr().has("expr") && decl.expr().has("oper")) {
-                            Property(valOrVar(decl), isolatedName, decl.vars().getObject(0).type().ref().pieces().getObject(0).name())
+                    Property(valOrVar(decl), isolatedName, decl.vars().getObject(0).type().ref().pieces().getObject(0).name())
                 } else {
                     getProperty(
                             decl,
@@ -311,7 +312,7 @@ open class KParserImpl(
             val isolatedName = isolated.name()
 
             functions.forEach {
-                it(isolatedName, className, node, this)
+                it(isolatedName, className, node)
             }
 
             val classProperty = when {

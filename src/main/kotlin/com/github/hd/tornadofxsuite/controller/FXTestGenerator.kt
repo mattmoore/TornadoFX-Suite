@@ -5,6 +5,10 @@ import com.github.ast.parser.frameworkconfigurations.TornadoFXView
 import com.github.ast.parser.frameworkconfigurations.detectRoot
 import com.github.ast.parser.frameworkconfigurations.detectScopes
 import com.github.ast.parser.frameworkconfigurations.saveComponentBreakdown
+import com.github.ast.parser.nodebreakdown.Digraph
+import com.github.ast.parser.nodebreakdown.Method
+import com.github.ast.parser.nodebreakdown.TestClassInfo
+import com.github.ast.parser.nodebreakdown.UINode
 import tornadofx.*
 import java.io.BufferedReader
 import java.io.File
@@ -29,14 +33,14 @@ class FXTestGenerator: Controller() {
                     .forEach { path ->
                         scanner = KParserImpl(
                                 path.toUri().path,
-                                ::saveComponentBreakdown,
+                                KParserImpl::saveComponentBreakdown,
                                 HashMap(),
-                                ::detectScopes,
-                                ::detectRoot
+                                KParserImpl::detectScopes,
+                                KParserImpl::detectRoot
                         )
 
                         val file = File(path.toUri())
-                        readFiles(file, path.toUri().path)
+                        readFiles(file)
                     }
         }
         consoleLogViewHierarchy()
@@ -55,7 +59,7 @@ class FXTestGenerator: Controller() {
     /**
      * Read file and start analyzing file with AST parsing
      */
-    private fun readFiles(file: File, path: String) {
+    private fun readFiles(file: File) {
         val fileText = file.bufferedReader().use(BufferedReader::readText)
 
 

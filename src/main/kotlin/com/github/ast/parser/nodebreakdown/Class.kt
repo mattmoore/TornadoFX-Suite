@@ -1,4 +1,4 @@
-package com.github.ast.parser
+package com.github.ast.parser.nodebreakdown
 
 import com.github.ast.parser.frameworkconfigurations.TornadoFXView
 import com.google.gson.JsonObject

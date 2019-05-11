@@ -1,6 +1,8 @@
 package com.github.ast.parser.frameworkconfigurations
 
 import com.github.ast.parser.*
+import com.github.ast.parser.nodebreakdown.Digraph
+import com.github.ast.parser.nodebreakdown.UINode
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import java.util.*
@@ -36,10 +38,10 @@ enum class INPUTS {
  * TornadoFX specific:
  *    Component breakdown meant to be saved and used for test generation
  */
-fun saveComponentBreakdown(
+fun KParserImpl.saveComponentBreakdown(
         superClass: String,
-        className: String,
-        parser: KParserImpl) {
+        className: String
+) {
     val currentTFXView = TornadoFXView()
 
     if (superClass == COMPONENTS.Fragment.name || superClass == COMPONENTS.View.name) {
@@ -48,7 +50,7 @@ fun saveComponentBreakdown(
     }
 
     if (!currentTFXView.type.isNullOrEmpty()) {
-        parser.views[className] = currentTFXView
+        views[className] = currentTFXView
         // TODO need to create a contravariant function to allow this to happen
         // parser.views.add(currentTFXView)
     }
@@ -58,14 +60,13 @@ fun saveComponentBreakdown(
  * TornadoFX specific:
  *    Detects TornadoFX Scopes for Views
  */
-fun detectScopes(
+fun KParserImpl.detectScopes(
         isolatedName: String,
         className: String,
-        node: JsonObject,
-        parser: KParserImpl
+        node: JsonObject
 ) {
     if (isolatedName == "scope") {
-        parser.views[className]?.scope = node.expr().rhs().ref().getType()
+        views[className]?.scope = node.expr().rhs().ref().getType()
 
         // TODO need to create a contravariant function to allow this to happen
         // val viewClass = parser.views.find { view -> view.viewClass == className }
@@ -77,16 +78,15 @@ fun detectScopes(
  * TornadoFX specific:
  *    Detects TornadoFX Scopes for Views
  */
-fun detectRoot(
+fun KParserImpl.detectRoot(
         isolatedName: String,
         className: String,
-        node: JsonObject,
-        parserImpl: KParserImpl
+        node: JsonObject
 ) {
     if (isolatedName == "root") {
-        parserImpl.viewImports[className] = parserImpl.saveViewImport()
+        viewImports[className] = saveViewImport()
         println("DETECTION ORDER")
-        detectLambdaControls(parserImpl, node, className, LinkedList())
+        detectLambdaControls(node, className, LinkedList())
         println("END OF DETECTION ORDER")
     }
 }
@@ -95,11 +95,12 @@ fun detectRoot(
  * TornadoFX specific:
  *    Detects TornadoFX View component DSLs which builds a digraph representation
  */
-fun detectLambdaControls(parserImpl: KParserImpl,
+fun KParserImpl.detectLambdaControls(
                          node: JsonObject,
                          className: String,
                          nodeHier: LinkedList<String>,
-                         nodeLevel: Int = 0) {
+                         nodeLevel: Int = 0
+) {
 
     val root = node.expr()
 
@@ -112,12 +113,12 @@ fun detectLambdaControls(parserImpl: KParserImpl,
          * Create Digraph if the class is new, otherwise, add node to the existing digraph.
          */
         val graphNode = UINode(rootName, nodeLevel, root, ArrayList())
-        if (parserImpl.mapClassViewNodes.contains(className)) {
-            parserImpl.mapClassViewNodes[className]?.addNode(graphNode)
+        if (mapClassViewNodes.contains(className)) {
+            mapClassViewNodes[className]?.addNode(graphNode)
         } else {
             val digraph = Digraph()
             digraph.addNode(graphNode)
-            parserImpl.mapClassViewNodes[className] = digraph
+            mapClassViewNodes[className] = digraph
         }
 
         /**
@@ -126,20 +127,20 @@ fun detectLambdaControls(parserImpl: KParserImpl,
         val parentLevel = nodeLevel - 1
         if (parentLevel >= 0) {
             // find the parent node by index
-            parserImpl.mapClassViewNodes[className]?.findLastElementWithParentLevel(parentLevel)?.let {
-                parserImpl.mapClassViewNodes[className]?.addEdge(it, graphNode)
+            mapClassViewNodes[className]?.findLastElementWithParentLevel(parentLevel)?.let {
+                mapClassViewNodes[className]?.addEdge(it, graphNode)
             }
         }
 
         // TornadoFX specific
-        parserImpl.addControls<INPUTS>(graphNode, className)
+        addControls<INPUTS>(graphNode, className)
 
         // get elements in lambda
         val lambda = root.asJsonObject.lambda()
         val elements: JsonArray = lambda.func().block().stmts()
 
         elements.forEach {
-            detectLambdaControls(parserImpl, it.asJsonObject, className, nodeHier, nodeLevel + 1)
+            detectLambdaControls(it.asJsonObject, className, nodeHier, nodeLevel + 1)
         }
     }
 }

@@ -1,8 +1,8 @@
 package com.github.hd.tornadofxsuite.controller
 
-import com.github.ast.parser.Digraph
-import com.github.ast.parser.TestClassInfo
-import com.github.ast.parser.UINode
+import com.github.ast.parser.nodebreakdown.Digraph
+import com.github.ast.parser.nodebreakdown.TestClassInfo
+import com.github.ast.parser.nodebreakdown.UINode
 import tornadofx.*
 import java.io.File
 import java.util.ArrayList
