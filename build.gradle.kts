@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     id("org.jetbrains.kotlin.jvm").version("1.3.30")
     id("com.github.johnrengelman.shadow").version("5.0.0")
+    id("com.gradle.build-scan") version "2.1"
     application
 }
 
@@ -52,4 +53,9 @@ dependencies {
 
 application {
   mainClassName = "com.github.hd.tornadofxsuite.app.TornadoFXSuite"
+}
+
+buildScan {
+    termsOfServiceUrl = "https://gradle.com/terms-of-service"
+    termsOfServiceAgree = "yes"
 }
